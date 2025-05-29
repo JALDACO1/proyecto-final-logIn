@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Productos Disponibles</title>
+    <link rel="stylesheet" href="../style/productos-cliente.css">
+</head>
+<body>
+    <script>
+        // Proteger acceso: solo usuarios autenticados
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/auth/logIn.html';
+        }
+    </script>
+
+    <div class="container">
+        <h1>Productos Disponibles</h1>
+        <div id="mensaje" class="mensaje"></div>
+        <div class="carrito-icon" onclick="mostrarCarrito()">
+            🛒 Ver Carrito (<span id="carrito-cantidad">0</span>)
+        </div>
+
+        <div class="filtros-container">
+            <div class="search-box">
+                <input type="text" id="busqueda" placeholder="Buscar productos..." oninput="filtrarProductos()">
+            </div>
+            <select class="ordenar-por" id="ordenarPor" onchange="filtrarProductos()">
+                <option value="">Ordenar por</option>
+                <option value="precioAsc">Precio: Menor a Mayor</option>
+                <option value="precioDesc">Precio: Mayor a Menor</option>
+                <option value="nombreAsc">Nombre: A-Z</option>
+                <option value="nombreDesc">Nombre: Z-A</option>
+            </select>
+        </div>
+
+        <div class="productos-grid" id="productos-container">
+            <!-- Los productos se cargarán aquí dinámicamente -->
+        </div>
+        <button onclick="cerrarSesion()" style="margin-top:20px;">Cerrar sesión</button>
+        <button onclick="mostrarModalPedidos()">Ver mis pedidos</button>
+    </div>
+
+    <!-- Modal del Carrito -->
+    <div id="carritoModal" class="modal">
+        <div class="modal-content">
+            <h2>Tu Carrito</h2>
+            <table class="carrito-tabla">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th>Precio</th>
+                        <th>Cantidad</th>
+                        <th>Total</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="carrito-items">
+                    <!-- Items del carrito aquí -->
+                </tbody>
+            </table>
+            <p>Total: $<span id="carrito-total">0.00</span></p>
+            <button onclick="cerrarCarrito()">Cerrar</button>
+            <button onclick="realizarCompra()" style="background-color: #2196F3;">Realizar Compra</button>
+        </div>
+    </div>
+
+    <!-- Modal de Pedidos -->
+    <div id="modalPedidos" class="modal" style="display:none;">
+        <div class="modal-content">
+            <span class="close" onclick="cerrarModalPedidos()">&times;</span>
+            <h2>Mis Pedidos</h2>
+            <div id="contenidoPedidos"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Variables globales ---
+        let productosOriginales = [];
+        let carrito = [];
+        const mensajeDiv = document.getElementById('mensaje');
+        
+        function getToken() {
+            return localStorage.getItem('token');
+        }
+
+        // Cargar productos al iniciar
+        window.onload = cargarProductos;
+
+        async function cargarProductos() {
+            try {
+                const response = await fetch('http://localhost:3000/api/productos', {
+                    headers: {
+                        'Authorization': 'Bearer ' + getToken()
+                    }
+                });
+                const productos = await response.json();
+                console.log("Productos recibidos:", productos);
+                productosOriginales = productos;
+                mostrarProductos(productos);
+                sincronizarCarritoConExistencias();
+            } catch (err) {
+                mensajeDiv.textContent = 'Error al cargar los productos';
+                mensajeDiv.classList.add('error');
+            }
+        }
+
+        function mostrarProductos(productos) {
+            const container = document.getElementById('productos-container');
+            container.innerHTML = '';
+
+            if (productos.length === 0) {
+                container.innerHTML = '<div class="no-resultados">No se encontraron productos que coincidan con tu búsqueda</div>';
+                return;
+            }
+
+            productos.forEach(producto => {
+                if (producto.existencias > 0) {
+                    const productoElement = document.createElement('div');
+                    productoElement.className = 'producto-card';
+                    productoElement.innerHTML = `
+                        <h3>${producto.nombre}</h3>
+                        <p>${producto.descripcion}</p>
+                        <p>Precio: $${parseFloat(producto.precio).toFixed(2)}</p>
+                        <p>Disponibles: <span id="existencias-${producto.id}">${producto.existencias}</span></p>
+                        <button onclick="agregarAlCarrito(${JSON.stringify(producto).replace(/\"/g, '&quot;')})">
+                            Agregar al Carrito
+                        </button>
+                    `;
+                    container.appendChild(productoElement);
+                }
+            });
+        }
+
+        function filtrarProductos() {
+            const busqueda = document.getElementById('busqueda').value.toLowerCase();
+            const ordenarPor = document.getElementById('ordenarPor').value;
+
+            let productosFiltrados = productosOriginales.filter(producto => {
+                const cumpleBusqueda = producto.nombre.toLowerCase().includes(busqueda) || 
+                                     producto.descripcion.toLowerCase().includes(busqueda);
+                return cumpleBusqueda;
+            });
+
+            // Aplicar ordenamiento
+            switch(ordenarPor) {
+                case 'precioAsc':
+                    productosFiltrados.sort((a, b) => a.precio - b.precio);
+                    break;
+                case 'precioDesc':
+                    productosFiltrados.sort((a, b) => b.precio - a.precio);
+                    break;
+                case 'nombreAsc':
+                    productosFiltrados.sort((a, b) => a.nombre.localeCompare(b.nombre));
+                    break;
+                case 'nombreDesc':
+                    productosFiltrados.sort((a, b) => b.nombre.localeCompare(a.nombre));
+                    break;
+            }
+
+            mostrarProductos(productosFiltrados);
+        }
+
+        // --- Carrito ---
+        function agregarAlCarrito(producto) {
+            const itemExistente = carrito.find(item => item.id === producto.id);
+            const productoActual = productosOriginales.find(p => p.id === producto.id);
+
+            if (!productoActual || productoActual.existencias === 0) {
+                mostrarMensaje('Este producto ya no está disponible', 'error');
+                return;
+            }
+
+            if (itemExistente) {
+                if (itemExistente.cantidad < productoActual.existencias) {
+                    itemExistente.cantidad++;
+                    mostrarMensaje('Cantidad actualizada en el carrito', 'success');
+                } else {
+                    mostrarMensaje('No hay más existencias disponibles', 'error');
+                    return;
+                }
+            } else {
+                carrito.push({
+                    id: producto.id,
+                    nombre: producto.nombre,
+                    precio: producto.precio,
+                    cantidad: 1,
+                    existencias: productoActual.existencias
+                });
+                mostrarMensaje('Producto agregado al carrito', 'success');
+            }
+            
+            actualizarContadorCarrito();
+        }
+
+        function actualizarContadorCarrito() {
+            const cantidad = carrito.reduce((total, item) => total + item.cantidad, 0);
+            document.getElementById('carrito-cantidad').textContent = cantidad;
+        }
+
+        function mostrarCarrito() {
+            const modal = document.getElementById('carritoModal');
+            const tbody = document.getElementById('carrito-items');
+            tbody.innerHTML = '';
+            let total = 0;
+
+            carrito.forEach(item => {
+                const subtotal = item.precio * item.cantidad;
+                total += subtotal;
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.nombre}</td>
+                    <td>$${parseFloat(item.precio).toFixed(2)}</td>
+                    <td>
+                        <button onclick="actualizarCantidad(${item.id}, -1)">-</button>
+                        ${item.cantidad}
+                        <button onclick="actualizarCantidad(${item.id}, 1)">+</button>
+                    </td>
+                    <td>$${subtotal.toFixed(2)}</td>
+                    <td><button onclick="eliminarDelCarrito(${item.id})" style="background: #dc3545;">Eliminar</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('carrito-total').textContent = total.toFixed(2);
+            modal.style.display = 'block';
+        }
+
+        function cerrarCarrito() {
+            document.getElementById('carritoModal').style.display = 'none';
+        }
+
+        function actualizarCantidad(id, cambio) {
+            const item = carrito.find(item => item.id === id);
+            const productoActual = productosOriginales.find(p => p.id === id);
+            if (item && productoActual) {
+                const nuevaCantidad = item.cantidad + cambio;
+                if (nuevaCantidad > 0 && nuevaCantidad <= productoActual.existencias) {
+                    item.cantidad = nuevaCantidad;
+                    mostrarCarrito();
+                    actualizarContadorCarrito();
+                }
+            }
+        }
+
+        function eliminarDelCarrito(id) {
+            carrito = carrito.filter(item => item.id !== id);
+            mostrarCarrito();
+            actualizarContadorCarrito();
+        }
+
+        function mostrarMensaje(mensaje, tipo) {
+            mensajeDiv.textContent = mensaje;
+            mensajeDiv.className = `mensaje ${tipo}`;
+            setTimeout(() => {
+                mensajeDiv.textContent = '';
+                mensajeDiv.className = 'mensaje';
+            }, 3000);
+        }
+
+        // --- Compra ---
+        async function realizarCompra() {
+            console.log('realizarCompra llamada');
+            if (carrito.length === 0) {
+                mostrarMensaje('El carrito está vacío', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:3000/api/pedidos', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + getToken()
+                    },
+                    body: JSON.stringify({
+                        productos: carrito.map(item => ({
+                            producto_id: item.id,
+                            cantidad: item.cantidad
+                        }))
+                    })
+                });
+
+                // LOG para depuración
+                const text = await response.text();
+                console.log('Respuesta de /api/pedidos:', response.status, text);
+
+                let data;
+                try { data = JSON.parse(text); } catch { data = {}; }
+
+                if (response.ok) {
+                    mostrarMensaje('¡Compra realizada con éxito!', 'success');
+                    carrito = [];
+                    actualizarContadorCarrito();
+                    cerrarCarrito();
+                    await cargarProductos();
+                } else {
+                    mostrarMensaje(data.message || 'Error al realizar la compra', 'error');
+                }
+            } catch (err) {
+                mostrarMensaje('Error de conexión con el servidor', 'error');
+            }
+        }
+
+        // --- Utilidad: cerrar el modal si se hace clic fuera de él ---
+        window.onclick = function(event) {
+            const modalCarrito = document.getElementById('carritoModal');
+            const modalPedidos = document.getElementById('modalPedidos');
+            if (event.target == modalCarrito) {
+                modalCarrito.style.display = "none";
+            }
+            if (event.target == modalPedidos) {
+                modalPedidos.style.display = "none";
+            }
+        }
+
+        // --- Cerrar sesión ---
+        function cerrarSesion() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('userRole');
+            window.location.href = '/auth/logIn.html';
+        }
+
+        // --- Pedidos en Modal ---
+        async function mostrarModalPedidos() {
+            const token = getToken();
+            if (!token) {
+                window.location.href = 'logIn.html';
+                return;
+            }
+            const res = await fetch('http://localhost:3000/api/pedidos/mis-pedidos', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const data = await res.json();
+            console.log("Pedidos recibidos:", data);
+            const contenidoPedidos = document.getElementById('contenidoPedidos');
+            if (data.pedidos && data.pedidos.length > 0) {
+                contenidoPedidos.innerHTML = data.pedidos.map(pedido => `
+                    <div class="pedido">
+                        <strong>Pedido #${pedido.id}</strong><br>
+                        Fecha: ${new Date(pedido.fecha).toLocaleString()}<br>
+                        Total: $${pedido.total}<br>
+                        <ul>
+                            ${pedido.productos.map(prod => `
+                                <li>${prod.nombre} - Cantidad: ${prod.cantidad} - Subtotal: $${prod.subtotal}</li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                    <hr>
+                `).join('');
+            } else {
+                contenidoPedidos.textContent = 'No tienes pedidos realizados.';
+            }
+            document.getElementById('modalPedidos').style.display = 'block';
+        }
+
+        function cerrarModalPedidos() {
+            document.getElementById('modalPedidos').style.display = 'none';
+        }
+
+        // Sincroniza el carrito con las existencias actuales de los productos
+        function sincronizarCarritoConExistencias() {
+            carrito = carrito.filter(item => {
+                const productoActual = productosOriginales.find(p => p.id === item.id);
+                if (!productoActual || productoActual.existencias === 0) {
+                    return false;
+                }
+                if (item.cantidad > productoActual.existencias) {
+                    item.cantidad = productoActual.existencias;
+                }
+                item.existencias = productoActual.existencias;
+                return true;
+            });
+            actualizarContadorCarrito();
+        }
+    </script>
+</body>
+</html>

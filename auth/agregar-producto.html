@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Administración de Productos</title>
+    <link rel="stylesheet" href="../style/agregar-producto.css">
+</head>
+<body>
+    <script>
+        // Obtener el token del almacenamiento local
+        const token = localStorage.getItem('token');
+        // Si no hay token, redirigir al login
+        if (!token) {
+            window.location.href = '/auth/logIn.html';
+        }
+    </script>
+
+    <div class="container">
+        <h2>Agregar Producto</h2>
+        <form id="productoForm">
+            <input type="hidden" id="productoId">
+            <label for="nombre">Nombre del producto:</label>
+            <input type="text" id="nombre" name="nombre" required>
+
+            <label for="descripcion">Descripción:</label>
+            <textarea id="descripcion" name="descripcion" rows="3" required></textarea>
+
+            <label for="precio">Precio:</label>
+            <input type="number" id="precio" name="precio" step="0.01" min="0" required>
+
+            <label for="existencias">Existencias:</label>
+            <input type="number" id="existencias" name="existencias" min="1" required>
+
+            <button type="submit" id="btnGuardar">Agregar</button>
+        </form>
+        <div id="mensaje" class="mensaje"></div>
+
+        <h2 style="margin-top:40px;">Lista de Productos</h2>
+        <table id="tablaProductos">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Descripción</th>
+                    <th>Precio</th>
+                    <th>Existencias</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Productos aquí -->
+            </tbody>
+        </table>
+        <button onclick="cerrarSesion()">Cerrar sesión</button>
+    </div>
+    <script>
+    const form = document.getElementById('productoForm');
+    const mensajeDiv = document.getElementById('mensaje');
+    const tablaProductos = document.getElementById('tablaProductos').querySelector('tbody');
+    const btnGuardar = document.getElementById('btnGuardar');
+    const productoIdInput = document.getElementById('productoId');
+
+    // Obtener token del localStorage
+    function getToken() {
+        return localStorage.getItem('token');
+    }
+
+    // Cargar productos al iniciar
+    window.onload = cargarProductos;
+
+    // Agregar o editar producto
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const nombre = document.getElementById('nombre').value;
+        const descripcion = document.getElementById('descripcion').value;
+        const precio = document.getElementById('precio').value;
+        const existencias = document.getElementById('existencias').value;
+        const productoId = productoIdInput.value;
+
+        let url = 'http://localhost:3000/api/productos';
+        let method = 'POST';
+        let body = { nombre, descripcion, precio, existencias };
+
+        if (productoId) {
+            // Editar producto
+            url += `/${productoId}`;
+            method = 'PUT';
+        }
+
+        try {
+            const response = await fetch(url, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + getToken()
+                },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json();
+            if (response.ok) {
+                mensajeDiv.textContent = productoId ? '¡Producto editado exitosamente!' : '¡Producto agregado exitosamente!';
+                mensajeDiv.classList.remove('error');
+                form.reset();
+                productoIdInput.value = '';
+                btnGuardar.textContent = 'Agregar';
+                cargarProductos();
+            } else {
+                mensajeDiv.textContent = data.message || 'Error al guardar el producto';
+                mensajeDiv.classList.add('error');
+            }
+        } catch (err) {
+            mensajeDiv.textContent = 'Error de conexión con el servidor';
+            mensajeDiv.classList.add('error');
+        }
+    });
+
+    // Cargar productos y mostrarlos en la tabla
+    async function cargarProductos() {
+        tablaProductos.innerHTML = '';
+        try {
+            const response = await fetch('http://localhost:3000/api/productos', {
+                headers: {
+                    'Authorization': 'Bearer ' + getToken()
+                }
+            });
+            const productos = await response.json();
+            productos.forEach(producto => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${producto.nombre}</td>
+                    <td>${producto.descripcion}</td>
+                    <td>$${parseFloat(producto.precio).toFixed(2)}</td>
+                    <td>${producto.existencias}</td>
+                    <td class="acciones">
+                        <button onclick="editarProducto(${producto.id})">Editar</button>
+                        <button onclick="eliminarProducto(${producto.id})" style="background:#dc3545;">Eliminar</button>
+                    </td>
+                `;
+                tablaProductos.appendChild(tr);
+            });
+        } catch (err) {
+            tablaProductos.innerHTML = '<tr><td colspan="5" class="error">No se pudieron cargar los productos</td></tr>';
+        }
+    }
+
+    // Editar producto
+    window.editarProducto = async function(id) {
+        try {
+            const response = await fetch(`http://localhost:3000/api/productos/${id}`, {
+                headers: {
+                    'Authorization': 'Bearer ' + getToken()
+                }
+            });
+            const producto = await response.json();
+            document.getElementById('nombre').value = producto.nombre;
+            document.getElementById('descripcion').value = producto.descripcion;
+            document.getElementById('precio').value = producto.precio;
+            document.getElementById('existencias').value = producto.existencias;
+            productoIdInput.value = producto.id;
+            btnGuardar.textContent = 'Guardar Cambios';
+            mensajeDiv.textContent = '';
+        } catch (err) {
+            mensajeDiv.textContent = 'Error al cargar el producto';
+            mensajeDiv.classList.add('error');
+        }
+    }
+
+    // Eliminar producto
+    window.eliminarProducto = async function(id) {
+        if (!confirm('¿Seguro que deseas eliminar este producto?')) return;
+        try {
+            const response = await fetch(`http://localhost:3000/api/productos/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': 'Bearer ' + getToken()
+                }
+            });
+            const data = await response.json();
+            if (response.ok) {
+                mensajeDiv.textContent = 'Producto eliminado correctamente';
+                mensajeDiv.classList.remove('error');
+                cargarProductos();
+            } else {
+                mensajeDiv.textContent = data.message || 'Error al eliminar el producto';
+                mensajeDiv.classList.add('error');
+            }
+        } catch (err) {
+            mensajeDiv.textContent = 'Error de conexión con el servidor';
+            mensajeDiv.classList.add('error');
+        }
+    }
+
+    function cerrarSesion() {
+        localStorage.removeItem('token');
+        localStorage.removeItem('userRole');
+        window.location.href = '/auth/logIn.html';
+    }
+    </script>
+</body>
+</html>

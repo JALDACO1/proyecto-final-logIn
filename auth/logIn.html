@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar Sesión</title>
+    <link rel="stylesheet" href="../style/login.css">
+</head>
+<body>
+    <div>
+        <form id="loginForm">
+            <h1>Iniciar Sesión</h1>
+            <div id="mensajeError" style="color: red; margin-bottom: 10px; text-align: center;"></div>
+            <label for="nombre">Nombre de usuario:</label>
+            <input type="text" id="nombre" name="nombre" placeholder="Ingrese su nombre de usuario" required>
+            <br><br>
+            <label for="contrasena">Contraseña:</label>
+            <input type="password" id="contrasena" name="contrasena" placeholder="Ingrese su contraseña" required>
+            <br><br>
+            <button type="submit">Iniciar Sesión</button>
+            <p style="text-align: center; margin-top: 10px;">¿No tienes una cuenta? <a href="registro.html">Regístrate aquí</a></p>
+        </form>
+    </div>
+    <script>
+    // Verificar si el servidor está corriendo
+    async function verificarServidor() {
+        try {
+            const response = await fetch('http://localhost:3000/');
+            return response.status === 200;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const mensajeError = document.getElementById('mensajeError');
+        const nombre = document.getElementById('nombre').value;
+        const contrasena = document.getElementById('contrasena').value;
+
+        try {
+            // Verificar si el servidor está activo
+            const servidorActivo = await verificarServidor();
+            if (!servidorActivo) {
+                throw new Error('El servidor no está respondiendo. Por favor, verifica que esté corriendo.');
+            }
+
+            mensajeError.style.color = 'blue';
+            mensajeError.textContent = 'Conectando con el servidor...';
+
+            const response = await fetch('http://localhost:3000/api/login', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    nombre: nombre,
+                    contrasena: contrasena
+                })
+            });
+            
+            const data = await response.json();
+            if (response.ok && data.token) {
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('userRole', data.user.rol);
+                mensajeError.style.color = 'green';
+                mensajeError.textContent = `Login exitoso! Rol: ${data.user.rol || 'No definido'}`;
+
+                const userRole = data.user.rol;
+                let targetUrl;
+                if (userRole === 'admin') {
+                    targetUrl = '/auth/agregar-producto.html';
+                } else if (userRole === 'cliente') {
+                    targetUrl = '/auth/productos-cliente.html';
+                } else {
+                    throw new Error(`Rol no válido: ${userRole}`);
+                }
+
+                setTimeout(() => {
+                    window.location.href = targetUrl;
+                }, 1000);
+            } else {
+                throw new Error(data.message || 'Credenciales inválidas');
+            }
+        } catch (error) {
+            mensajeError.style.color = 'red';
+            mensajeError.textContent = error.message || 'Error al conectar con el servidor';
+        }
+    });
+
+    // Verificar estado del servidor al cargar la página
+    window.addEventListener('DOMContentLoaded', async function() {
+        const mensajeError = document.getElementById('mensajeError');
+        const servidorActivo = await verificarServidor();
+        if (!servidorActivo) {
+            mensajeError.style.color = 'orange';
+            mensajeError.textContent = 'Advertencia: No se detecta el servidor. Asegúrate de que el servidor esté corriendo.';
+        } else {
+            mensajeError.textContent = '';
+        }
+    });
+    </script>
+</body>
+</html>

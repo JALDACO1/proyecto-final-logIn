@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REGISTRO</title>
+    <link rel="stylesheet" href="../style/registro.css" />
+  </head>
+  <body>
+    <div>
+      <form id="registroForm">
+        <h1>Crear Cuenta</h1>
+        <label for="nombre">Nombre:</label>
+        <input 
+          type="text" 
+          id="nombre" 
+          name="nombre" 
+          placeholder="Ingrese su nombre" 
+          required 
+        />
+        <br/><br/>
+        <label for="apellido">Apellido:</label>
+        <input 
+          type="text" 
+          id="apellido" 
+          name="apellido" 
+          placeholder="Ingrese su apellido" 
+          required 
+        />
+        <br/><br/>
+        <label for="correo">Correo:</label>
+        <input 
+          type="text" 
+          id="correo" 
+          name="correo" 
+          placeholder="Ingrese su correo" 
+          required 
+        />
+        <br/><br/>
+        <label for="contrasena">Contraseña:</label>
+        <input 
+          type="password" 
+          id="contrasena" 
+          name="contraseña" 
+          placeholder="Ingrese su contraseña" 
+          required 
+        />
+        <br/><br/>
+        <label for="rfc">RFC:</label>
+        <input 
+          type="text" 
+          id="rfc" 
+          name="rfc" 
+          placeholder="Ingrese su RFC" 
+          required 
+        />
+        <br/><br/>
+        <label for="direccion">Direccion:</label>
+        <input 
+          type="text" 
+          id="direccion" 
+          name="direccion" 
+          placeholder="Ingrese su direccion" 
+          required
+        />
+        <br/><br/>
+        <button type="submit">Registrarme</button>
+        <br/><br/>
+        <p>¿Ya tienes una cuenta? <a href="login.html">Inicia sesión aquí</a></p>
+      </form>
+    </div>
+
+    <script>
+      document.getElementById('registroForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        let nombre = document.getElementById('nombre').value;
+        let apellido = document.getElementById('apellido').value;
+        let correo = document.getElementById('correo').value;
+        let contrasena = document.getElementById('contrasena').value;
+        let rfc = document.getElementById('rfc').value;
+        let direccion = document.getElementById('direccion').value;
+
+        let response = await fetch('http://localhost:3000/api/sign-up', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nombre: nombre,
+            apellido: apellido,
+            correo: correo,
+            contrasena: contrasena,
+            rfc: rfc,
+            direccion: direccion
+          })
+        });
+
+        const data = await response.json();
+        console.log('Respuesta del backend:', data);
+
+        if (response.ok) {
+          // Si el registro es exitoso, redirige al login
+          alert('Registro exitoso. Por favor inicia sesión.');
+          window.location.href = 'login.html';
+        } else {
+          // Si el backend manda un objeto de error, muestra el mensaje más claro posible
+          let msg = '';
+          if (data && typeof data.message === 'object') {
+            msg = data.message.sqlMessage || JSON.stringify(data.message);
+          } else if (data && data.message) {
+            msg = data.message;
+          } else {
+            msg = 'Error al registrar la cuenta';
+          }
+          alert(msg);
+        }
+      });
+    </script>
+  </body>
+</html>
